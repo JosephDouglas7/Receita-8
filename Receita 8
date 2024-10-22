@@ -1,0 +1,259 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+enum TableStatus { idle, loading, ready, error }
+
+class DataService {
+  final ValueNotifier<Map<String, dynamic>> tableStateNotifier = ValueNotifier({
+    'status': TableStatus.idle,
+    'dataObjects': [],
+    'propertyNames': [],
+    'columnNames': [],
+  });
+  int _itemsCount = 5;
+
+  void carregar(int index) {
+    final funcoes = [carregarCafes, carregarCervejas, carregarNacoes, carregarPessoas];
+    tableStateNotifier.value = {
+      'status': TableStatus.loading,
+      'dataObjects': [],
+      'propertyNames': [],
+      'columnNames': [],
+    };
+    funcoes[index]();
+  }
+
+  void setItemsCount(int count) {
+    _itemsCount = count;
+  }
+
+  void carregarCervejas() {
+    var beersUri = Uri(
+      scheme: 'https',
+      host: 'random-data-api.com',
+      path: 'api/beer/random_beer',
+      queryParameters: {'size': '$_itemsCount'},
+    );
+    http.read(beersUri).then((jsonString) {
+      var beersJson = jsonDecode(jsonString);
+      tableStateNotifier.value = {
+        'status': TableStatus.ready,
+        'dataObjects': beersJson,
+        'propertyNames': ["name", "style", "ibu"],
+        'columnNames': ["Nome", "Estilo", "IBU"],
+      };
+    });
+  }
+
+  void carregarCafes() {
+    var uri = Uri(
+      scheme: 'https',
+      host: 'random-data-api.com',
+      path: 'api/coffee/random_coffee',
+      queryParameters: {'size': '$_itemsCount'},
+    );
+    http.read(uri).then((jsonString) {
+      var json = jsonDecode(jsonString);
+      tableStateNotifier.value = {
+        'status': TableStatus.ready,
+        'dataObjects': json,
+        'propertyNames': ["blend_name", "origin", "variety"],
+        'columnNames': ["Blend", "Origem", "Variedade"],
+      };
+    });
+  }
+
+  Future<void> carregarNacoes() async {
+    var uri = Uri(
+      scheme: 'https',
+      host: 'random-data-api.com',
+      path: 'api/nation/random_nation',
+      queryParameters: {'size': '$_itemsCount'},
+    );
+    var jsonString = await http.read(uri);
+    var json = jsonDecode(jsonString);
+    tableStateNotifier.value = {
+      'status': TableStatus.ready,
+      'dataObjects': json,
+      'propertyNames': ["nationality", "language", "capital"],
+      'columnNames': ["Nacionalidade", "Idioma", "Capital"],
+    };
+  }
+
+  Future<void> carregarPessoas() async {
+    var uri = Uri(
+      scheme: 'https',
+      host: 'random-data-api.com',
+      path: 'api/users/random_user',
+      queryParameters: {'size': '$_itemsCount'},
+    );
+    var jsonString = await http.read(uri);
+    var json = jsonDecode(jsonString);
+    tableStateNotifier.value = {
+      'status': TableStatus.ready,
+      'dataObjects': json,
+      'propertyNames': ["first_name", "last_name", "username"],
+      'columnNames': ["Primeiro Nome", "Último Nome", "Nome de Usuário"],
+
+    };
+  } 
+  void ordenar(String propertyName, bool ascending) {
+  List dataObjects = tableStateNotifier.value['dataObjects'];
+  dataObjects.sort((a, b) {
+    if (ascending) {
+      return a[propertyName].compareTo(b[propertyName]);
+    } else {
+      return b[propertyName].compareTo(a[propertyName]);
+    }
+  });
+  tableStateNotifier.value = {
+    ...tableStateNotifier.value,
+    'dataObjects': dataObjects,
+  };
+  tableStateNotifier.notifyListeners();
+} 
+}
+
+final dataService = DataService();
+
+void main() {
+  MyApp app = MyApp();
+  runApp(app);
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData(primarySwatch: Colors.deepPurple),
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text("Dicas"),
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: DropdownButton<int>(
+                value: 5,
+                items: [
+                  DropdownMenuItem(value: 5, child: Text('5')),
+                  DropdownMenuItem(value: 10, child: Text('10')),
+                  DropdownMenuItem(value: 15, child: Text('15')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    dataService.setItemsCount(value);
+                  }
+                },
+              ),
+            ),
+            Expanded(
+              child: ValueListenableBuilder(
+                valueListenable: dataService.tableStateNotifier,
+                builder: (_, value, __) {
+                  switch (value['status']) {
+                    case TableStatus.idle:
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset('assets/welcome.png'),
+                             SizedBox(height: 20),
+                            Text("Toque algum botão para começar"),
+                          ], 
+                        ), 
+                      );
+                    case TableStatus.ready:
+                      return DataTableWidget(
+                        jsonObjects: value['dataObjects'],
+                        propertyNames: value['propertyNames'],
+                        columnNames: value['columnNames'],
+                      );
+                    case TableStatus.error:
+                      return Center(child: Text("Lascou"));
+                    default:
+                      return Center(child: Text("..."));
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: NewNavBar(
+          itemSelectedCallback: dataService.carregar,
+        ),
+      ),
+    );
+  } 
+}
+
+
+class NewNavBar extends HookWidget {
+  final void Function(int) _itemSelectedCallback;
+
+  NewNavBar({required void Function(int) itemSelectedCallback})
+      : _itemSelectedCallback = itemSelectedCallback;
+
+  @override
+  Widget build(BuildContext context) {
+    var state = useState(1);
+
+    return BottomNavigationBar(
+      onTap: (index) {
+        state.value = index;
+        _itemSelectedCallback(index);
+      },
+      currentIndex: state.value,
+      items: const [
+        BottomNavigationBarItem(
+          label: "Cafés",
+          icon: Icon(Icons.coffee_outlined),
+        ),
+        BottomNavigationBarItem(
+          label: "Cervejas",
+          icon: Icon(Icons.local_drink_outlined),
+        ),
+        BottomNavigationBarItem(
+          label: "Nações",
+          icon: Icon(Icons.flag_outlined),
+        ),
+      ],
+    );
+  }
+}
+
+class DataTableWidget extends StatelessWidget {
+  final List jsonObjects;
+  final List<String> columnNames;
+  final List<String> propertyNames;
+
+  DataTableWidget({
+    this.jsonObjects = const [],
+    this.columnNames = const ["Nome", "Estilo", "IBU"],
+    this.propertyNames = const ["name", "style", "ibu"],
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DataTable(
+      columns: columnNames.map(
+        (name) => DataColumn(
+          label: Expanded(
+            child: Text(name, style: TextStyle(fontStyle: FontStyle.italic)),
+  ),
+        ),
+      ).toList(),
+      rows: jsonObjects.map(
+        (obj) => DataRow(
+          cells: propertyNames.map(
+            (propName) => DataCell(Text(obj[propName])),
+          ).toList(),
+        ),
+      ).toList(),
+    );
+  }
+}
